@@ -120,6 +120,15 @@ a.btn{text-decoration:none;display:inline-block}
   <button class="btn pri" id="btnTodos" type="button">Todos en un Excel</button>
 </div></div>
 <div class="toast" id="toast" hidden></div>
+<div class="aviso" id="panelListo" hidden role="dialog" aria-label="Excel listo">
+  <b>Excel listo</b>
+  <p id="listoNombre"></p>
+  <div class="acciones">
+    <button type="button" class="btn pri" id="btnGuardar">Guardar en el teléfono</button>
+    <button type="button" class="btn sec" id="btnCompartir">Compartir (WhatsApp, correo…)</button>
+    <button type="button" class="btn sec" id="btnCerrarListo">Cerrar</button>
+  </div>
+</div>
 
 
 <script src="jszip.min.js"></script>
@@ -343,6 +352,9 @@ document.addEventListener('click',e=>{
     actual=db.orden[db.orden.length-1]; guardar(); render(); toast('Transformador borrado.'); return;}
   if(b.id==='btnXlsx'){exportar(b,false); return;}
   if(b.id==='btnTodos'){exportar(b,true); return;}
+  if(b.id==='btnGuardar'){guardarArchivo(); return;}
+  if(b.id==='btnCompartir'){compartirArchivo(); return;}
+  if(b.id==='btnCerrarListo'){$('#panelListo').hidden=true; return;}
 });
 document.getElementById('frm').addEventListener('submit',e=>e.preventDefault());
 let tToast; function toast(m){const t=$('#toast'); t.textContent=m; t.hidden=false; clearTimeout(tToast); tToast=setTimeout(()=>t.hidden=true,3200);}
@@ -451,10 +463,23 @@ async function construirXlsx(lista){
   return zip.generateAsync({type:'blob',compression:'DEFLATE'});
 }
 
-function guardarArchivo(blob,nombre){
-  const url=URL.createObjectURL(blob); const a=document.createElement('a');
-  a.href=url; a.download=nombre; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),4000);
+let listo=null; // {blob,nombre}
+function guardarArchivo(){
+  if(!listo)return;
+  const url=URL.createObjectURL(listo.blob); const a=document.createElement('a');
+  a.href=url; a.download=listo.nombre; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+  toast('Revisa tu carpeta Descargas: '+listo.nombre);
+}
+async function compartirArchivo(){
+  if(!listo)return;
+  const f=new File([listo.blob],listo.nombre,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  try{await navigator.share({files:[f],title:listo.nombre});}
+  catch(e){if(e&&e.name!=='AbortError')toast('No se pudo compartir. Usa Guardar.');}
+}
+function puedeCompartir(){
+  try{const f=new File([new Blob(['x'])],'a.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    return !!(navigator.canShare&&navigator.canShare({files:[f]}));}catch(e){return false;}
 }
 async function exportar(btn,todos){
   const regs=todos?db.orden.map(id=>db.regs[id]).filter(g=>!g.ejemplo||db.orden.length===1):[db.regs[actual]];
@@ -464,7 +489,10 @@ async function exportar(btn,todos){
     const blob=await construirXlsx(lista);
     const etiqueta=lista.length>1?`${lista.length}_TR_${fechaMX(lista[0].fecha)||''}`:(lista[0].serie||fechaMX(lista[0].fecha)||'sin_serie');
     const nombre=`Formato_TTR_${etiqueta}`.replace(/[\\/:*?"<>|]+/g,'-')+'.xlsx';
-    guardarArchivo(blob,nombre); toast('Excel guardado en Descargas: '+nombre);
+    listo={blob,nombre};
+    $('#listoNombre').textContent=nombre;
+    $('#btnCompartir').hidden=!puedeCompartir();
+    $('#panelListo').hidden=false;
   }catch(e){toast('No se pudo generar el Excel: '+(e&&e.message||e));}
   finally{btn.disabled=false; btn.textContent=txt;}
 }
